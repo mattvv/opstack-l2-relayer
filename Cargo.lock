@@ -2424,6 +2424,7 @@ name = "relayer"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-contract",
  "alloy-rpc-types",
  "alloy-rpc-types-eth",
  "eyre",

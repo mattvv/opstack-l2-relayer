@@ -1,19 +1,33 @@
+use std::sync::Arc;
 use alloy::{
     primitives::{address, Address, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::{BlockNumberOrTag, Filter},
 };
-
+use alloy::core::sol;
+use alloy::network::Ethereum;
+use alloy::primitives::Bytes;
+use alloy::providers::{PendingTransactionBuilder, RootProvider};
+use alloy::pubsub::PubSubFrontend;
 use alloy_rpc_types_eth::Log;
 use eyre::Result;
 use futures_util::stream::StreamExt;
 
-struct Identifier {
-    origin: Address,
-    block_number: U256,
-    log_index: U256,
-    timestamp: U256,
-    chain_id: U256,
+const CROSS_DOMAIN_MESSENGER_ADDR: Address = address!("4200000000000000000000000000000000000023");
+
+sol! {
+    struct Identifier {
+        address origin;
+        uint256 blockNumber;
+        uint256 logIndex;
+        uint256 timestamp;
+        uint256 chainId;
+    }
+
+    #[sol(rpc)]
+    contract L2ToL2CrossDomainMessenger {
+        function relayMessage(Identifier calldata _id, bytes calldata _sentMessage) external payable;
+    }
 }
 
 struct SentMessage {
@@ -21,7 +35,8 @@ struct SentMessage {
     target: Address,
     message_nonce: U256,
     sender: Address,
-    message: Vec<u8>,
+    message: Bytes,
+    // message: Vec<u8>,
     block_number: U256,
     timestamp: U256,
 
@@ -29,7 +44,7 @@ struct SentMessage {
 }
 
 impl SentMessage {
-    fn from_log(chain_id: U256, log: Log) -> Self {
+    pub  fn from_log(chain_id: U256, log: Log) -> Self {
         let block_number = U256::from(log.block_number.unwrap());
         let timestamp = U256::from(log.block_timestamp.unwrap());
 
@@ -55,7 +70,7 @@ impl SentMessage {
         let sender_bytes = log_data.data[0..20].to_vec();
         let sender = Address::from_slice(&sender_bytes);
 
-        let message = log_data.data[20..].to_vec();
+        let message = Bytes::from(log_data.data[20..].to_vec());
 
         Self {
             destination,
@@ -69,15 +84,26 @@ impl SentMessage {
         }
     }
 
-    fn id(&self) -> Identifier {
+    pub fn id(&self) -> Identifier {
         Identifier {
             origin: self.sender,
-            block_number: self.block_number,
-            log_index: self.message_nonce,
+            blockNumber: self.block_number,
+            logIndex: self.message_nonce,
             timestamp: self.timestamp,
-            chain_id: self.chain_id,
+            chainId: self.chain_id,
         }
     }
+
+    pub fn message(&self) -> Bytes {
+        self.message.clone()
+    }
+}
+
+async fn new_relay_message_tx(provider: Arc<RootProvider<PubSubFrontend>>, sent_message: SentMessage) -> alloy_contract::Result<PendingTransactionBuilder<PubSubFrontend, Ethereum>> {
+    let contract = L2ToL2CrossDomainMessenger::new(CROSS_DOMAIN_MESSENGER_ADDR, provider);
+    let id = sent_message.id();
+    let msg = Bytes::from(sent_message.message());
+    contract.relayMessage(id, msg).send().await
 }
 
 #[tokio::main]
