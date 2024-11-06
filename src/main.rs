@@ -34,7 +34,7 @@ impl SentMessage {
         let timestamp = U256::from(log.block_timestamp.unwrap());
 
         let topics = log.topics();
-        if  topics.len() != 4 {
+        if topics.len() != 4 {
             panic!("Invalid number of topics");
         }
 
@@ -57,7 +57,6 @@ impl SentMessage {
 
         let message = log_data.data[20..].to_vec();
 
-
         Self {
             destination,
             target,
@@ -66,7 +65,7 @@ impl SentMessage {
             message,
             block_number,
             timestamp,
-            chain_id
+            chain_id,
         }
     }
 
@@ -85,14 +84,15 @@ impl SentMessage {
 async fn main() -> Result<()> {
     let rpc_urls: Vec<String> = std::env::var("RPC_URLS")
         .unwrap_or(
-            "wss://interop-devnet-0.optimism.io/,wss://interop-devnet-1.optimism.io/".to_string(),
+            "https://interop-devnet-0.optimism.io/,https://interop-devnet-1.optimism.io/"
+                .to_string(),
         )
         .split(',')
         .map(|s| s.to_string())
         .collect();
 
     for rpc_url in rpc_urls {
-        subscribe_to_events(&rpc_url).await?;
+        subscribe_to_events_http(&rpc_url).await?;
     }
 
     Ok(())
@@ -119,4 +119,30 @@ async fn subscribe_to_events(rpc_url: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
+    let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
+
+    let l2_l2_xdomain_messenger_address = address!("4200000000000000000000000000000000000023");
+    let filter = Filter::new()
+        .address(l2_l2_xdomain_messenger_address)
+        .event("SentMessage(uint256,address,uint256,address,bytes)")
+        .from_block(BlockNumberOrTag::Latest);
+
+    let latest_block = provider.get_block_number().await?;
+
+    let mut from_block = latest_block;
+    loop {
+        println!("Checking RPC: {} from block {}", rpc_url, from_block);
+        let logs = provider
+            .get_logs(&filter.clone().from_block(from_block))
+            .await?;
+        for log in logs {
+            println!("L2 contract token logs: {log:?}");
+        }
+
+        from_block = latest_block;
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    }
 }
