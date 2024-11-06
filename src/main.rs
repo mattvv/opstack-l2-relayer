@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::sync::Arc;
 use alloy::{
     primitives::{address, Address, U256},
@@ -46,7 +45,7 @@ struct SentMessage {
 }
 
 impl SentMessage {
-    pub  fn from_log(chain_id: u64, log: Log) -> Self {
+    pub  fn from_log(chain_id: U256, log: Log) -> Self {
         let block_number = U256::from(log.block_number.unwrap());
         let timestamp = U256::from(log.block_timestamp.unwrap());
 
@@ -82,7 +81,7 @@ impl SentMessage {
             message,
             block_number,
             timestamp,
-            chain_id,
+            chain_id: chain_id.
         }
     }
 
@@ -108,13 +107,12 @@ async fn send_relay_message(provider: &RootProvider<Http<Client>>, sent_message:
     contract.relayMessage(id, msg).send().await
 }
 
-async fn create_rpc_map(rpc_urls: Vec<String>) -> Result<HashMap<u64, dyn Provider>> {
+async fn create_rpc_map(rpc_urls: Vec<String>) -> Result<HashMap<U256, RootProvider<Http<Client>>>> {
     let mut providers = HashMap::new();
     for rpc_url in rpc_urls {
         let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
-        let chain_id = provider.get_chain_id().await?;
+        let chain_id = U256::from(provider.get_chain_id().await?);
         providers.insert(chain_id, provider);
-        // providers.push(provider);
     }
     Ok(providers)
 }
@@ -132,14 +130,9 @@ async fn main() -> Result<()> {
     let rpc_map = Arc::new(create_rpc_map(rpc_urls).await?);
 
     let mut handles = Vec::new();
-    for rpc_url in rpc_urls {
-        if rpc_url.starts_with("ws") {
-            let handle = tokio::spawn(async move { subscribe_to_events_ws(&rpc_url).await });
-            handles.push(handle);
-            continue;
-        }
-
-        let handle = tokio::spawn(async move { subscribe_to_events_http(&rpc_url).await });
+    
+    for (chain_id, provider) in rpc_map.iter() {
+        let handle = tokio::spawn(async move { subscribe_to_events_http(chain_id, provider, rpc_map.clone()).await });
         handles.push(handle);
     }
 
@@ -173,10 +166,10 @@ async fn subscribe_to_events_ws(rpc_url: &str) -> Result<()> {
     Ok(())
 }
 
-async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
-    let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
-
-    let chain_id = provider.get_chain_id().await?;
+async fn subscribe_to_events_http(chain_id: U256, provider: &RootProvider<Http<Client>>, chain_providers: Arc<HashMap<U256, RootProvider<Http<Client>>>>) -> Result<()> {
+    // async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
+    // let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
+    // let chain_id = provider.get_chain_id().await?;
 
     let l2_l2_xdomain_messenger_address = address!("4200000000000000000000000000000000000023");
     let filter = Filter::new()
@@ -188,7 +181,7 @@ async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
 
     let mut from_block = latest_block;
     loop {
-        println!("Checking RPC: {} from block {}", rpc_url, from_block);
+        println!("Checking chain: {} from block {}", chain_id, from_block);
         let latest_block = provider.get_block_number().await?;
         let logs = provider
             .get_logs(&filter.clone().from_block(from_block))
@@ -198,11 +191,10 @@ async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
 
             let sent_message = SentMessage::from_log(chain_id, log);
 
-            let _destination = sent_message.destination;
-            let _target = sent_message.target;
-
-            // TODO: Get RPC provider for the destination chain and use instead of `&provider`
-            let pending_tx_builder = send_relay_message(&provider, sent_message).await?;
+            let dest = sent_message.destination;
+            let dest_provider = chain_providers.get(&dest).unwrap();
+            println!("Relaying to chain: {}", dest);
+            let pending_tx_builder = send_relay_message(dest_provider, sent_message).await?;
             pending_tx_builder.get_receipt().await?;
         }
 
