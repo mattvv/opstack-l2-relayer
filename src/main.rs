@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::sync::Arc;
 use alloy::{
     primitives::{address, Address, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -105,6 +108,17 @@ async fn send_relay_message(provider: &RootProvider<Http<Client>>, sent_message:
     contract.relayMessage(id, msg).send().await
 }
 
+async fn create_rpc_map(rpc_urls: Vec<String>) -> Result<HashMap<u64, dyn Provider>> {
+    let mut providers = HashMap::new();
+    for rpc_url in rpc_urls {
+        let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
+        let chain_id = provider.get_chain_id().await?;
+        providers.insert(chain_id, provider);
+        // providers.push(provider);
+    }
+    Ok(providers)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let rpc_urls: Vec<String> = std::env::var("RPC_URLS")
@@ -115,6 +129,7 @@ async fn main() -> Result<()> {
         .split(',')
         .map(|s| s.to_string())
         .collect();
+    let rpc_map = Arc::new(create_rpc_map(rpc_urls).await?);
 
     let mut handles = Vec::new();
     for rpc_url in rpc_urls {
