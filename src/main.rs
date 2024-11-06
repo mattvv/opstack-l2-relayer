@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use alloy::{
     primitives::{address, Address, U256},
     providers::{Provider, ProviderBuilder, WsConnect},
@@ -8,7 +7,8 @@ use alloy::core::sol;
 use alloy::network::Ethereum;
 use alloy::primitives::Bytes;
 use alloy::providers::{PendingTransactionBuilder, RootProvider};
-use alloy::pubsub::PubSubFrontend;
+use alloy::transports::http::Client;
+use alloy_transport_http::Http;
 use alloy_rpc_types_eth::Log;
 use eyre::Result;
 use futures_util::stream::StreamExt;
@@ -36,15 +36,14 @@ struct SentMessage {
     message_nonce: U256,
     sender: Address,
     message: Bytes,
-    // message: Vec<u8>,
     block_number: U256,
     timestamp: U256,
 
-    chain_id: U256,
+    chain_id: u64,
 }
 
 impl SentMessage {
-    pub  fn from_log(chain_id: U256, log: Log) -> Self {
+    pub  fn from_log(chain_id: u64, log: Log) -> Self {
         let block_number = U256::from(log.block_number.unwrap());
         let timestamp = U256::from(log.block_timestamp.unwrap());
 
@@ -90,7 +89,7 @@ impl SentMessage {
             blockNumber: self.block_number,
             logIndex: self.message_nonce,
             timestamp: self.timestamp,
-            chainId: self.chain_id,
+            chainId: U256::from(self.chain_id),
         }
     }
 
@@ -99,7 +98,7 @@ impl SentMessage {
     }
 }
 
-async fn new_relay_message_tx(provider: Arc<RootProvider<PubSubFrontend>>, sent_message: SentMessage) -> alloy_contract::Result<PendingTransactionBuilder<PubSubFrontend, Ethereum>> {
+async fn send_relay_message(provider: &RootProvider<Http<Client>>, sent_message: SentMessage) -> alloy_contract::Result<PendingTransactionBuilder<Http<Client>, Ethereum>> {
     let contract = L2ToL2CrossDomainMessenger::new(CROSS_DOMAIN_MESSENGER_ADDR, provider);
     let id = sent_message.id();
     let msg = Bytes::from(sent_message.message());
@@ -162,6 +161,8 @@ async fn subscribe_to_events_ws(rpc_url: &str) -> Result<()> {
 async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
     let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
 
+    let chain_id = provider.get_chain_id().await?;
+
     let l2_l2_xdomain_messenger_address = address!("4200000000000000000000000000000000000023");
     let filter = Filter::new()
         .address(l2_l2_xdomain_messenger_address)
@@ -179,6 +180,15 @@ async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
             .await?;
         for log in logs {
             println!("L2 contract token logs: {log:?}");
+
+            let sent_message = SentMessage::from_log(chain_id, log);
+
+            let _destination = sent_message.destination;
+            let _target = sent_message.target;
+
+            // TODO: Get RPC provider for the destination chain and use instead of `&provider`
+            let pending_tx_builder = send_relay_message(&provider, sent_message).await?;
+            pending_tx_builder.get_receipt().await?;
         }
 
         from_block = latest_block;

@@ -2427,6 +2427,7 @@ dependencies = [
  "alloy-contract",
  "alloy-rpc-types",
  "alloy-rpc-types-eth",
+ "alloy-transport-http",
  "eyre",
  "futures-util",
  "tokio",
