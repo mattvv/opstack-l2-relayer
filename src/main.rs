@@ -91,8 +91,14 @@ async fn main() -> Result<()> {
         .map(|s| s.to_string())
         .collect();
 
+    let mut handles = Vec::new();
     for rpc_url in rpc_urls {
-        subscribe_to_events_http(&rpc_url).await?;
+        let handle = tokio::spawn(async move { subscribe_to_events_http(&rpc_url).await });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await??;
     }
 
     Ok(())
