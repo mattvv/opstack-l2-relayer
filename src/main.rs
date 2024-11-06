@@ -93,6 +93,12 @@ async fn main() -> Result<()> {
 
     let mut handles = Vec::new();
     for rpc_url in rpc_urls {
+        if rpc_url.starts_with("ws") {
+            let handle = tokio::spawn(async move { subscribe_to_events_ws(&rpc_url).await });
+            handles.push(handle);
+            continue;
+        }
+
         let handle = tokio::spawn(async move { subscribe_to_events_http(&rpc_url).await });
         handles.push(handle);
     }
@@ -104,7 +110,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn subscribe_to_events(rpc_url: &str) -> Result<()> {
+async fn subscribe_to_events_ws(rpc_url: &str) -> Result<()> {
     let ws = WsConnect::new(rpc_url);
     let provider = ProviderBuilder::new().on_ws(ws).await?;
 
