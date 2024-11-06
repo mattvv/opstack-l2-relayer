@@ -147,6 +147,7 @@ async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
     let mut from_block = latest_block;
     loop {
         println!("Checking RPC: {} from block {}", rpc_url, from_block);
+        let latest_block = provider.get_block_number().await?;
         let logs = provider
             .get_logs(&filter.clone().from_block(from_block))
             .await?;
