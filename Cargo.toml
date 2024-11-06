@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 alloy = { version = "0.5.4", features = ["full"] }
+alloy-rpc-types = "0.5.4"
+alloy-rpc-types-eth = "0.5.4"
 eyre = "0.6.12"
 futures-util = "0.3.31"
 tokio = { version = "1", features = ["full"] }
