@@ -1,16 +1,29 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use alloy::{hex, network::EthereumWallet, primitives::{address, Address, U256}, providers::{fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller}, Provider, ProviderBuilder}, rpc::types::{BlockNumberOrTag, Filter}, signers::local::PrivateKeySigner};
 use alloy::core::sol;
 use alloy::hex::ToHexExt;
 use alloy::network::Ethereum;
-use alloy::primitives::{Bytes, IntoLogData};
 use alloy::primitives::private::alloy_rlp::Encodable;
+use alloy::primitives::{Bytes, IntoLogData};
 use alloy::providers::{PendingTransactionBuilder, RootProvider};
 use alloy::sol_types::private::SolTypeValue;
 use alloy::transports::http::Client;
-use alloy_transport_http::Http;
+use alloy::{
+    hex,
+    network::EthereumWallet,
+    primitives::{address, Address, U256},
+    providers::{
+        fillers::{
+            BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+            WalletFiller,
+        },
+        Provider, ProviderBuilder,
+    },
+    rpc::types::{BlockNumberOrTag, Filter},
+    signers::local::PrivateKeySigner,
+};
 use alloy_rpc_types_eth::Log;
+use alloy_transport_http::Http;
+use std::collections::HashMap;
+use std::sync::Arc;
 // use alloy::alloy_sol_types::SolEvent;
 use alloy::sol_types::{SolEvent, SolValue};
 use eyre::Result;
@@ -74,7 +87,7 @@ impl SentMessageWrapper {
     //     Ok((topics, data))
     // }
 
-    pub  fn from_log(chain_id: U256, log: Log) -> SentMessageWrapper {
+    pub fn from_log(chain_id: U256, log: Log) -> SentMessageWrapper {
         let block_number = U256::from(log.block_number.unwrap());
         let timestamp = U256::from(log.block_timestamp.unwrap_or(1730888072));
         let log_index = log.log_index.unwrap_or_default();
@@ -111,7 +124,7 @@ impl SentMessageWrapper {
             message,
         };
 
-        Self{
+        Self {
             event,
             block_number,
             log_index,
@@ -162,10 +175,13 @@ impl SentMessageWrapper {
     // }
 }
 
-async fn send_relay_message(provider: &HttpProvider, sent_message: SentMessageWrapper, mut payload: Vec<u8>) -> alloy_contract::Result<PendingTransactionBuilder<Http<Client>, Ethereum>> {
+async fn send_relay_message(
+    provider: &HttpProvider,
+    sent_message: SentMessageWrapper,
+    mut payload: Vec<u8>,
+) -> alloy_contract::Result<PendingTransactionBuilder<Http<Client>, Ethereum>> {
     let contract = L2ToL2CrossDomainMessenger::new(CROSS_DOMAIN_MESSENGER_ADDR, provider);
     let id = sent_message.id();
-
 
     // let msg = sent_message.message();
 
@@ -178,7 +194,18 @@ async fn send_relay_message(provider: &HttpProvider, sent_message: SentMessageWr
 }
 
 // type HttpProvider = FillProvider<JoinFill<alloy::providers::Identity, WalletFiller<EthereumWallet>>, RootProvider<Http<Client>>, alloy_transport_http::Http<Client>, Ethereum>;
-type HttpProvider = FillProvider<JoinFill<JoinFill<alloy::providers::Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>, WalletFiller<EthereumWallet>>, RootProvider<alloy_transport_http::Http<Client>>, alloy_transport_http::Http<Client>, Ethereum>;
+type HttpProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            alloy::providers::Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    RootProvider<alloy_transport_http::Http<Client>>,
+    alloy_transport_http::Http<Client>,
+    Ethereum,
+>;
 
 async fn create_rpc_map(rpc_urls: Vec<String>) -> Result<HashMap<U256, HttpProvider>> {
     let mut providers = HashMap::new();
@@ -186,7 +213,6 @@ async fn create_rpc_map(rpc_urls: Vec<String>) -> Result<HashMap<U256, HttpProvi
     let private_key = hex!("96d4318ac13f2d9d131bd323a2e04a6913723b0f4ee052da6f9317b1fb50f910");
     let signer = PrivateKeySigner::from_slice(&private_key)?;
     let wallet = EthereumWallet::from(signer);
-
 
     for rpc_url in rpc_urls {
         let provider = ProviderBuilder::new()
@@ -213,7 +239,7 @@ async fn main() -> Result<()> {
     let rpc_map: Arc<_> = Arc::new(create_rpc_map(rpc_urls).await?);
 
     let mut handles = Vec::new();
-    
+
     let entries: Vec<_> = rpc_map
         .iter()
         .map(|(chain_id, provider)| (chain_id.clone(), provider.clone()))
@@ -240,7 +266,11 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn subscribe_to_events_http(chain_id: U256, provider: &HttpProvider, rpc_map: Arc<HashMap<U256, HttpProvider>>) -> Result<()> {
+async fn subscribe_to_events_http(
+    chain_id: U256,
+    provider: &HttpProvider,
+    rpc_map: Arc<HashMap<U256, HttpProvider>>,
+) -> Result<()> {
     // async fn subscribe_to_events_http(rpc_url: &str) -> Result<()> {
     // let provider = ProviderBuilder::new().on_http(rpc_url.parse().expect("Invalid RPC"));
     // let chain_id = provider.get_chain_id().await?;
@@ -260,7 +290,7 @@ async fn subscribe_to_events_http(chain_id: U256, provider: &HttpProvider, rpc_m
         let latest_block_result = provider.get_block_number().await;
         if let Err(e) = latest_block_result {
             println!("Error: {:?}", e);
-            continue
+            continue;
         }
         let latest_block = latest_block_result.unwrap();
 
@@ -269,12 +299,11 @@ async fn subscribe_to_events_http(chain_id: U256, provider: &HttpProvider, rpc_m
             .await;
         if let Err(e) = logs_result {
             println!("Error: {:?}", e);
-            continue
+            continue;
         }
         let logs = logs_result.unwrap();
 
         for log in logs {
-
             // let mut out = Vec::<u8>::new();
             // log.stv_abi_encode_packed_to(&mut out);
             println!("L2 contract token logs: {log:?}");
@@ -302,19 +331,23 @@ async fn subscribe_to_events_http(chain_id: U256, provider: &HttpProvider, rpc_m
             let sent_message = SentMessageWrapper::from_log(chain_id, log);
 
             let dest = sent_message.event.destination;
-            let dest_provider = rpc_map.get(&dest).unwrap();
             println!("Relaying to chain: {}", dest);
-            let pending_tx_builder_result = send_relay_message(dest_provider, sent_message, payload).await;
+            let dest_provider = rpc_map
+                .get(&dest)
+                .expect(format!("[NOT FOUND] Destination Chain ID: {}", dest).as_str());
+            println!("Relaying to chain: {}", dest);
+            let pending_tx_builder_result =
+                send_relay_message(dest_provider, sent_message, payload).await;
             if let Err(e) = pending_tx_builder_result {
                 println!("Error: {:?}", e);
-                continue
+                continue;
             }
 
             let pending_tx_builder = pending_tx_builder_result.unwrap();
             let result = pending_tx_builder.get_receipt().await;
-            if  let Err(e) = result {
+            if let Err(e) = result {
                 println!("Error: {:?}", e);
-                continue
+                continue;
             }
 
             let receipt = result.unwrap();
@@ -327,7 +360,6 @@ async fn subscribe_to_events_http(chain_id: U256, provider: &HttpProvider, rpc_m
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
 }
-
 
 // async fn subscribe_to_events_ws(rpc_url: &str) -> Result<()> {
 //     let ws = WsConnect::new(rpc_url);
