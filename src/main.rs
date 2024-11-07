@@ -208,7 +208,14 @@ type HttpProvider = FillProvider<
 async fn create_rpc_map(rpc_urls: Vec<String>) -> Result<HashMap<U256, HttpProvider>> {
     let mut providers = HashMap::new();
 
-    let private_key = hex!("96d4318ac13f2d9d131bd323a2e04a6913723b0f4ee052da6f9317b1fb50f910");
+    let private_key = hex::decode(
+        std::env::var("PRIVATE_KEY")
+            .unwrap_or_else(|_| {
+                "96d4318ac13f2d9d131bd323a2e04a6913723b0f4ee052da6f9317b1fb50f910".to_string()
+            })
+            .trim_start_matches("0x"),
+    )
+    .expect("Invalid private key");
     let signer = PrivateKeySigner::from_slice(&private_key)?;
     let wallet = EthereumWallet::from(signer);
 
