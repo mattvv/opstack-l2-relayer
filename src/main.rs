@@ -1,10 +1,8 @@
 use alloy::core::sol;
 use alloy::hex::ToHexExt;
 use alloy::network::Ethereum;
-use alloy::primitives::private::alloy_rlp::Encodable;
-use alloy::primitives::{Bytes, IntoLogData};
+use alloy::primitives::Bytes;
 use alloy::providers::{PendingTransactionBuilder, RootProvider};
-use alloy::sol_types::private::SolTypeValue;
 use alloy::transports::http::Client;
 use alloy::{
     hex,
@@ -108,7 +106,7 @@ impl SentMessageWrapper {
         let dest_bytes = topics[1].as_slice();
         let destination = U256::from_be_slice(dest_bytes);
 
-        let target = Address::from_word(topics[2].into());
+        let target = Address::from_word(topics[2]);
         let message_nonce: U256 = topics[3].into();
 
         let sender_bytes = log_data.data[0..20].to_vec();
@@ -143,30 +141,30 @@ impl SentMessageWrapper {
         }
     }
 
-    pub fn message(&self) -> Bytes {
-        let mut selector = SentMessage::SIGNATURE_HASH.to_vec();
+    // pub fn message(&self) -> Bytes {
+    //     let mut selector = SentMessage::SIGNATURE_HASH.to_vec();
 
-        let mut destination = self.event.destination.abi_encode();
-        println!("Destination: {:?}", destination);
-        let mut target = self.event.target.abi_encode();
-        println!("Target: {:?}", target);
-        let mut nonce = self.event.messageNonce.abi_encode();
-        println!("Nonce: {:?}", nonce);
-        let mut sender = self.event.sender.abi_encode();
-        println!("Sender: {:?}", sender);
+    //     let mut destination = self.event.destination.abi_encode();
+    //     println!("Destination: {:?}", destination);
+    //     let mut target = self.event.target.abi_encode();
+    //     println!("Target: {:?}", target);
+    //     let mut nonce = self.event.messageNonce.abi_encode();
+    //     println!("Nonce: {:?}", nonce);
+    //     let mut sender = self.event.sender.abi_encode();
+    //     println!("Sender: {:?}", sender);
 
-        selector.append(&mut destination);
-        selector.append(&mut target);
-        selector.append(&mut nonce);
-        selector.append(&mut sender);
+    //     selector.append(&mut destination);
+    //     selector.append(&mut target);
+    //     selector.append(&mut nonce);
+    //     selector.append(&mut sender);
 
-        let mut data = self.event.encode_data();
-        selector.append(&mut data);
+    //     let mut data = self.event.encode_data();
+    //     selector.append(&mut data);
 
-        Bytes::from(selector)
-        // Bytes::from(self.event.encode_data())
-        // self.event.message.clone()
-    }
+    //     Bytes::from(selector)
+    //     // Bytes::from(self.event.encode_data())
+    //     // self.event.message.clone()
+    // }
 
     // pub fn serialized(&self) -> String {
     //     let ld = self.event.encode_log_data();
@@ -178,7 +176,7 @@ impl SentMessageWrapper {
 async fn send_relay_message(
     provider: &HttpProvider,
     sent_message: SentMessageWrapper,
-    mut payload: Vec<u8>,
+    payload: Vec<u8>,
 ) -> alloy_contract::Result<PendingTransactionBuilder<Http<Client>, Ethereum>> {
     let contract = L2ToL2CrossDomainMessenger::new(CROSS_DOMAIN_MESSENGER_ADDR, provider);
     let id = sent_message.id();
@@ -242,7 +240,7 @@ async fn main() -> Result<()> {
 
     let entries: Vec<_> = rpc_map
         .iter()
-        .map(|(chain_id, provider)| (chain_id.clone(), provider.clone()))
+        .map(|(chain_id, provider)| (*chain_id, provider.clone()))
         .collect();
 
     for (chain_id, provider) in entries {
@@ -334,7 +332,7 @@ async fn subscribe_to_events_http(
             println!("Relaying to chain: {}", dest);
             let dest_provider = rpc_map
                 .get(&dest)
-                .expect(format!("[NOT FOUND] Destination Chain ID: {}", dest).as_str());
+                .unwrap_or_else(|| panic!("[NOT FOUND] Destination Chain ID: {}", dest));
             println!("Relaying to chain: {}", dest);
             let pending_tx_builder_result =
                 send_relay_message(dest_provider, sent_message, payload).await;
